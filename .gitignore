@@ -1,3 +1,6 @@
+# PyCharm and other
+.idea
+
 # Logs
 logs
 *.log
