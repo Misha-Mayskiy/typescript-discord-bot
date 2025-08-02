@@ -7,7 +7,8 @@ import {
     StringSelectMenuBuilder,
     GuildMember,
     Role,
-    MessageFlags
+    MessageFlags,
+    ActivityType
 } from 'discord.js';
 import {config} from './config';
 import db, {setupDatabase} from './database';
@@ -24,6 +25,12 @@ const client = new Client({
 
 client.once(Events.ClientReady, c => {
     console.log(`✅ Готово! Бот ${c.user.tag} запущен и готов к работе на ${c.guilds.cache.size} серверах.`);
+
+    // Custom status
+    c.user.setActivity({
+        name: `on ${c.guilds.cache.size} servers | /roles-post`,
+        type: ActivityType.Watching, // Other vars: Playing, Listening, Competing
+    });
 });
 
 client.on(Events.InteractionCreate, async (interaction: Interaction) => {
