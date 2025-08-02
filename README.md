@@ -8,7 +8,7 @@ A friendly and powerful Discord bot that allows server members to self-assign ga
 
 It's simple! Just click the link below and choose the server you want to add me to.
 
-**[➡️ Add Bot to Your Server](https://discord.com/oauth2/authorize?client_id=1387783412709855262&permissions=268438528&integration_type=0&scope=bot+applications.commands)**
+**[➡️ Add Bot to Your Server](https://discord.com/oauth2/authorize?client_id=1387783412709855262)**
 
 You will need "Administrator" or "Manage Server" permissions on the server to add the bot.
 

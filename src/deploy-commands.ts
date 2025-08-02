@@ -2,7 +2,7 @@ import {REST, Routes, SlashCommandBuilder, PermissionFlagsBits} from 'discord.js
 import {config} from './config';
 
 const commands = [
-    // Команда для администраторов для добавления роли
+    // Команда для добавления роли
     new SlashCommandBuilder()
         .setName('role-add')
         .setDescription('Добавить игровую роль в меню выбора.')
@@ -16,7 +16,7 @@ const commands = [
                 .setRequired(false))
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles), // Только для тех, кто может управлять ролями
 
-    // Команда для администраторов для удаления роли
+    // Команда для удаления роли
     new SlashCommandBuilder()
         .setName('role-remove')
         .setDescription('Удалить игровую роль из меню выбора.')
@@ -26,12 +26,24 @@ const commands = [
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
-    // Команда для администраторов для публикации меню
+    // Команда для публикации меню
     new SlashCommandBuilder()
         .setName('roles-post')
         .setDescription('Опубликовать или обновить сообщение с меню выбора ролей в этом канале.')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
-];
+
+    // Команда для синхронизации ролей (добавление новых) группой
+    new SlashCommandBuilder()
+        .setName('roles-sync')
+        .setDescription('Добавить несколько доступных ролей сервера в систему бота за раз.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+
+    // Команда для удаления ролей группой
+    new SlashCommandBuilder()
+        .setName('roles-bulk-remove')
+        .setDescription('Удалить несколько ролей из системы бота за раз.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+].map(command => command.toJSON());
 
 const rest = new REST({version: '10'}).setToken(config.TOKEN!);
 
