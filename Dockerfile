@@ -1,5 +1,5 @@
 # Используем легковесный и безопасный образ Node.js
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Устанавливаем рабочую директорию внутри контейнера
 WORKDIR /usr/src/app
