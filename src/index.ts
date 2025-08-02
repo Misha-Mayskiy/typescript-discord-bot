@@ -108,6 +108,8 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     // --- ОБРАБОТКА ВЫБОРА В МЕНЮ (логика для пользователей) ---
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'game_role_select') {
+        await interaction.deferReply({ephemeral: true}); // Откладываем ответ, чтобы избежать тайм-аутов
+
         const member = interaction.member as GuildMember;
         const selectedRoleIds = interaction.values;
 
@@ -117,17 +119,36 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
             role_id: string
         }[]).map(r => r.role_id);
 
-        // Роли, которые нужно добавить
-        await member.roles.add(selectedRoleIds);
+        try {
+            // Убираем роли, которые есть в общем списке, но не были выбраны сейчас
+            const rolesToRemove = allGameRoleIds.filter(id => !selectedRoleIds.includes(id));
+            if (rolesToRemove.length > 0) {
+                await member.roles.remove(rolesToRemove);
+            }
 
-        // Роли, которые нужно убрать (те, что есть в общем списке, но не были выбраны сейчас)
-        const rolesToRemove = allGameRoleIds.filter(id => !selectedRoleIds.includes(id));
-        await member.roles.remove(rolesToRemove);
+            // Добавляем новые выбранные роли
+            if (selectedRoleIds.length > 0) {
+                await member.roles.add(selectedRoleIds);
+            }
 
-        await interaction.reply({
-            content: '✅ Ваши роли обновлены!',
-            ephemeral: true,
-        });
+            await interaction.editReply({ // Используем editReply, так как сделали deferReply
+                content: '✅ Ваши роли обновлены!',
+            });
+
+        } catch (error: any) {
+            console.error('Произошла ошибка при обновлении ролей:', error); // Логируем ошибку для себя
+
+            // Проверяем, что это ошибка прав
+            if (error.code === 50013) {
+                await interaction.editReply({
+                    content: '❌ **Произошла ошибка!**\nПохоже, у меня недостаточно прав для управления ролями. Пожалуйста, попросите администратора сервера проверить, что моя роль в списке находится **выше** игровых ролей, которыми я управляю.',
+                });
+            } else {
+                await interaction.editReply({
+                    content: '❌ Произошла непредвиденная ошибка. Пожалуйста, попробуйте еще раз позже.',
+                });
+            }
+        }
     }
 });
 
