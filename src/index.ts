@@ -5,82 +5,130 @@ import {
     Interaction,
     ActionRowBuilder,
     StringSelectMenuBuilder,
-    GuildMemberRoleManager,
-    GuildMember
+    GuildMember,
+    Role
 } from 'discord.js';
-import {config, GAME_ROLES} from './config';
+import {config} from './config';
+import db, {setupDatabase} from './database';
 
-// Создаем клиента
+// Вызываем настройку БД при старте
+setupDatabase();
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers, // Важно для работы с ролями
+        GatewayIntentBits.GuildMembers,
     ],
 });
 
-// Событие готовности бота
 client.once(Events.ClientReady, c => {
-    console.log(`✅ Готово! Бот ${c.user.tag} запущен.`);
+    console.log(`✅ Готово! Бот ${c.user.tag} запущен и готов к работе на ${c.guilds.cache.size} серверах.`);
 });
 
-// Слушаем взаимодействия (команды и кнопки/меню)
 client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-    if (!interaction.isChatInputCommand() && !interaction.isStringSelectMenu()) return;
+    if (!interaction.inGuild()) return; // Команды доступны только на серверах
 
-    // --- Обработка команды /roles ---
-    if (interaction.isChatInputCommand() && interaction.commandName === 'roles') {
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('game_role_select')
-            .setPlaceholder('Выберите игры, в которые вы играете...')
-            .setMinValues(0) // Можно не выбирать ничего, чтобы снять все роли
-            .setMaxValues(GAME_ROLES.length) // Можно выбрать хоть все роли
-            .addOptions(GAME_ROLES.map(role => ({
-                label: role.label,
-                description: role.description,
-                value: role.value, // ID роли
-            })));
+    // --- ОБРАБОТКА КОМАНД АДМИНИСТРАТОРА ---
 
-        const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+    if (interaction.isChatInputCommand()) {
+        // Команда /role-add
+        if (interaction.commandName === 'role-add') {
+            const role = interaction.options.getRole('role') as Role;
+            const description = interaction.options.getString('description');
 
-        await interaction.reply({
-            content: 'Выберите ваши игровые роли из списка ниже.',
-            components: [row],
-            ephemeral: true, // Сообщение видно только тому, кто вызвал команду
-        });
+            try {
+                const stmt = db.prepare('INSERT INTO game_roles (guild_id, role_id, role_name, description) VALUES (?, ?, ?, ?)');
+                stmt.run(interaction.guildId, role.id, role.name, description);
+                await interaction.reply({content: `Роль **${role.name}** добавлена в меню выбора.`, ephemeral: true});
+            } catch (error: any) {
+                if (error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
+                    await interaction.reply({content: `Ошибка: роль **${role.name}** уже добавлена.`, ephemeral: true});
+                } else {
+                    await interaction.reply({content: 'Произошла ошибка при добавлении роли.', ephemeral: true});
+                }
+            }
+        }
+
+        // Команда /role-remove
+        if (interaction.commandName === 'role-remove') {
+            const role = interaction.options.getRole('role') as Role;
+
+            const stmt = db.prepare('DELETE FROM game_roles WHERE guild_id = ? AND role_id = ?');
+            const result = stmt.run(interaction.guildId, role.id);
+
+            if (result.changes > 0) {
+                await interaction.reply({content: `Роль **${role.name}** удалена из списка.`, ephemeral: true});
+            } else {
+                await interaction.reply({
+                    content: `Ошибка: роль **${role.name}** не найдена в списке.`,
+                    ephemeral: true
+                });
+            }
+        }
+
+        // Команда /roles-post
+        if (interaction.commandName === 'roles-post') {
+            const rolesFromDb = db.prepare('SELECT role_id, role_name, description FROM game_roles WHERE guild_id = ?').all(interaction.guildId) as {
+                role_id: string,
+                role_name: string,
+                description: string | null
+            }[];
+
+            if (rolesFromDb.length === 0) {
+                await interaction.reply({
+                    content: 'На этом сервере не настроено ни одной игровой роли. Используйте `/role-add`, чтобы добавить их.',
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('game_role_select')
+                .setPlaceholder('Выберите ваши игровые роли...')
+                .setMinValues(0)
+                .setMaxValues(rolesFromDb.length)
+                .addOptions(rolesFromDb.map(role => ({
+                    label: role.role_name,
+                    description: role.description || `Получить роль ${role.role_name}`,
+                    value: role.role_id,
+                })));
+
+            const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+
+            // Отправляем сообщение в текущий канал
+            await interaction.channel?.send({
+                content: '**Выберите роли по играм**\nНажмите на меню ниже, чтобы добавить или убрать роли.',
+                components: [row],
+            });
+
+            await interaction.reply({content: 'Сообщение с выбором ролей успешно отправлено!', ephemeral: true});
+        }
     }
 
-    // --- Обработка выбора в меню ---
+    // --- ОБРАБОТКА ВЫБОРА В МЕНЮ (логика для пользователей) ---
+
     if (interaction.isStringSelectMenu() && interaction.customId === 'game_role_select') {
         const member = interaction.member as GuildMember;
-        const selectedRoleIds = interaction.values; // Массив ID ролей, которые выбрал пользователь
+        const selectedRoleIds = interaction.values;
 
-        // Получаем все ID игровых ролей, которые есть в нашей системе
-        const allGameRoleIds = GAME_ROLES.map(r => r.value);
+        // Получаем ВСЕ возможные игровые роли для ЭТОГО сервера из БД
+        const allGameRoleIdsStmt = db.prepare('SELECT role_id FROM game_roles WHERE guild_id = ?');
+        const allGameRoleIds = (allGameRoleIdsStmt.all(interaction.guildId) as {
+            role_id: string
+        }[]).map(r => r.role_id);
 
-        // Получаем роли, которые уже есть у пользователя, но только те, что из нашего списка
-        const currentMemberRoles = member.roles.cache
-            .filter(role => allGameRoleIds.includes(role.id))
-            .map(role => role.id);
+        // Роли, которые нужно добавить
+        await member.roles.add(selectedRoleIds);
 
-        // Роли, которые нужно добавить = выбранные - текущие
-        const rolesToAdd = selectedRoleIds.filter(id => !currentMemberRoles.includes(id));
+        // Роли, которые нужно убрать (те, что есть в общем списке, но не были выбраны сейчас)
+        const rolesToRemove = allGameRoleIds.filter(id => !selectedRoleIds.includes(id));
+        await member.roles.remove(rolesToRemove);
 
-        // Роли, которые нужно убрать = текущие - выбранные
-        const rolesToRemove = currentMemberRoles.filter(id => !selectedRoleIds.includes(id));
-
-        if (rolesToAdd.length > 0) {
-            await member.roles.add(rolesToAdd);
-        }
-        if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove);
-        }
-
-        await interaction.update({ // Используем update вместо reply
-            content: '✅ Ваши роли были успешно обновлены!',
-            components: [], // Убираем меню после выбора
+        await interaction.reply({
+            content: '✅ Ваши роли обновлены!',
+            ephemeral: true,
         });
     }
 });
 
-// Логин бота
 client.login(config.TOKEN);
