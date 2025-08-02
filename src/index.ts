@@ -1,55 +1,86 @@
-import {Client, GatewayIntentBits} from "discord.js";
-import {config} from "dotenv";
+import {
+    Client,
+    GatewayIntentBits,
+    Events,
+    Interaction,
+    ActionRowBuilder,
+    StringSelectMenuBuilder,
+    GuildMemberRoleManager,
+    GuildMember
+} from 'discord.js';
+import {config, GAME_ROLES} from './config';
 
-config();
-
+// Создаем клиента
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers, // Важно для работы с ролями
+    ],
 });
 
-client.once("ready", () => {
-    console.log(`🤖 Logged in as ${client.user?.tag}`);
+// Событие готовности бота
+client.once(Events.ClientReady, c => {
+    console.log(`✅ Готово! Бот ${c.user.tag} запущен.`);
 });
 
-client.on("interactionCreate", async (interaction: any) => {
-    if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName !== "role") return;
+// Слушаем взаимодействия (команды и кнопки/меню)
+client.on(Events.InteractionCreate, async (interaction: Interaction) => {
+    if (!interaction.isChatInputCommand() && !interaction.isStringSelectMenu()) return;
 
-    const sub = interaction.options.getSubcommand();          // add | remove
-    const member = interaction.options.getMember("user", true);
-    const role = interaction.options.getRole("role", true);
+    // --- Обработка команды /roles ---
+    if (interaction.isChatInputCommand() && interaction.commandName === 'roles') {
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('game_role_select')
+            .setPlaceholder('Выберите игры, в которые вы играете...')
+            .setMinValues(0) // Можно не выбирать ничего, чтобы снять все роли
+            .setMaxValues(GAME_ROLES.length) // Можно выбрать хоть все роли
+            .addOptions(GAME_ROLES.map(role => ({
+                label: role.label,
+                description: role.description,
+                value: role.value, // ID роли
+            })));
 
-    if (!interaction.guild) {
-        return interaction.reply({content: "Guild only.", ephemeral: true});
-    }
+        const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
-    // Permission / hierarchy guard
-    const botMember = await interaction.guild.members.fetchMe();
-    if (
-        role.position >= botMember.roles.highest.position ||
-        member.roles.highest.position >= botMember.roles.highest.position
-    ) {
-        return interaction.reply({
-            content: "I’m not high enough in the role hierarchy!",
-            ephemeral: true,
-        });
-    }
-
-    try {
-        if (sub === "add") {
-            await member.roles.add(role);
-            await interaction.reply({content: `✅ Gave ${role} to ${member}.`});
-        } else {
-            await member.roles.remove(role);
-            await interaction.reply({content: `✅ Removed ${role} from ${member}.`});
-        }
-    } catch (err) {
-        console.error(err);
         await interaction.reply({
-            content: "❌ Error editing roles (log has details).",
-            ephemeral: true,
+            content: 'Выберите ваши игровые роли из списка ниже.',
+            components: [row],
+            ephemeral: true, // Сообщение видно только тому, кто вызвал команду
+        });
+    }
+
+    // --- Обработка выбора в меню ---
+    if (interaction.isStringSelectMenu() && interaction.customId === 'game_role_select') {
+        const member = interaction.member as GuildMember;
+        const selectedRoleIds = interaction.values; // Массив ID ролей, которые выбрал пользователь
+
+        // Получаем все ID игровых ролей, которые есть в нашей системе
+        const allGameRoleIds = GAME_ROLES.map(r => r.value);
+
+        // Получаем роли, которые уже есть у пользователя, но только те, что из нашего списка
+        const currentMemberRoles = member.roles.cache
+            .filter(role => allGameRoleIds.includes(role.id))
+            .map(role => role.id);
+
+        // Роли, которые нужно добавить = выбранные - текущие
+        const rolesToAdd = selectedRoleIds.filter(id => !currentMemberRoles.includes(id));
+
+        // Роли, которые нужно убрать = текущие - выбранные
+        const rolesToRemove = currentMemberRoles.filter(id => !selectedRoleIds.includes(id));
+
+        if (rolesToAdd.length > 0) {
+            await member.roles.add(rolesToAdd);
+        }
+        if (rolesToRemove.length > 0) {
+            await member.roles.remove(rolesToRemove);
+        }
+
+        await interaction.update({ // Используем update вместо reply
+            content: '✅ Ваши роли были успешно обновлены!',
+            components: [], // Убираем меню после выбора
         });
     }
 });
 
-client.login(process.env.DISCORD_TOKEN).then();
+// Логин бота
+client.login(config.TOKEN);
