@@ -6,7 +6,8 @@ import {
     ActionRowBuilder,
     StringSelectMenuBuilder,
     GuildMember,
-    Role
+    Role,
+    MessageFlags
 } from 'discord.js';
 import {config} from './config';
 import db, {setupDatabase} from './database';
@@ -39,12 +40,21 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
             try {
                 const stmt = db.prepare('INSERT INTO game_roles (guild_id, role_id, role_name, description) VALUES (?, ?, ?, ?)');
                 stmt.run(interaction.guildId, role.id, role.name, description);
-                await interaction.reply({content: `Роль **${role.name}** добавлена в меню выбора.`, ephemeral: true});
+                await interaction.reply({
+                    content: `Роль **${role.name}** добавлена в меню выбора.`,
+                    flags: [MessageFlags.Ephemeral]
+                });
             } catch (error: any) {
                 if (error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
-                    await interaction.reply({content: `Ошибка: роль **${role.name}** уже добавлена.`, ephemeral: true});
+                    await interaction.reply({
+                        content: `Ошибка: роль **${role.name}** уже добавлена.`,
+                        flags: [MessageFlags.Ephemeral]
+                    });
                 } else {
-                    await interaction.reply({content: 'Произошла ошибка при добавлении роли.', ephemeral: true});
+                    await interaction.reply({
+                        content: 'Произошла ошибка при добавлении роли.',
+                        flags: [MessageFlags.Ephemeral]
+                    });
                 }
             }
         }
@@ -57,11 +67,14 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
             const result = stmt.run(interaction.guildId, role.id);
 
             if (result.changes > 0) {
-                await interaction.reply({content: `Роль **${role.name}** удалена из списка.`, ephemeral: true});
+                await interaction.reply({
+                    content: `Роль **${role.name}** удалена из списка.`,
+                    flags: [MessageFlags.Ephemeral]
+                });
             } else {
                 await interaction.reply({
                     content: `Ошибка: роль **${role.name}** не найдена в списке.`,
-                    ephemeral: true
+                    flags: [MessageFlags.Ephemeral]
                 });
             }
         }
@@ -77,7 +90,7 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
             if (rolesFromDb.length === 0) {
                 await interaction.reply({
                     content: 'На этом сервере не настроено ни одной игровой роли. Используйте `/role-add`, чтобы добавить их.',
-                    ephemeral: true
+                    flags: [MessageFlags.Ephemeral]
                 });
                 return;
             }
@@ -101,14 +114,17 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
                 components: [row],
             });
 
-            await interaction.reply({content: 'Сообщение с выбором ролей успешно отправлено!', ephemeral: true});
+            await interaction.reply({
+                content: 'Сообщение с выбором ролей успешно отправлено!',
+                flags: [MessageFlags.Ephemeral]
+            });
         }
     }
 
     // --- ОБРАБОТКА ВЫБОРА В МЕНЮ (логика для пользователей) ---
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'game_role_select') {
-        await interaction.deferReply({ephemeral: true}); // Откладываем ответ, чтобы избежать тайм-аутов
+        await interaction.deferReply({flags: [MessageFlags.Ephemeral]}); // Откладываем ответ, чтобы избежать тайм-аутов
 
         const member = interaction.member as GuildMember;
         const selectedRoleIds = interaction.values;
